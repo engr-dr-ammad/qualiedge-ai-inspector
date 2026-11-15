@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>QualiEdge AI Inspector</title>
+  <meta name="description" content="Camera-based visual quality inspection that learns from your own good and defective parts. Developed by Ammad Aslam.">
+  <meta name="author" content="Ammad Aslam">
+  <meta name="theme-color" content="#0f1720">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <div>
+        <strong>QualiEdge AI</strong>
+        <span class="sub">Inspector</span>
+      </div>
+    </div>
+    <div class="recipe-picker">
+      <label for="recipeSelect" class="sr-only">Inspection recipe</label>
+      <select id="recipeSelect" title="Inspection recipe (one per product)"></select>
+      <button id="newRecipeBtn" class="icon-btn" title="New recipe" aria-label="New recipe">＋</button>
+    </div>
+    <span id="modelPill" class="pill pill-muted" title="Model status">No model</span>
+  </header>
+
+  <main>
+    <!-- Shared camera stage (Inspect + Train) -->
+    <section id="stage" class="stage">
+      <div id="videoWrap" class="video-wrap">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="camPlaceholder" class="cam-placeholder">
+          <p>Camera is off</p>
+          <button id="camStartBtn" class="btn primary">Start camera</button>
+          <p class="hint">No camera? Use <em>Photo file</em> below.</p>
+        </div>
+        <div id="flash" class="flash"></div>
+      </div>
+      <div class="cam-controls">
+        <select id="camSelect" aria-label="Camera"></select>
+        <button id="camFlipBtn" class="btn small" title="Switch front/back camera">Flip</button>
+        <button id="torchBtn" class="btn small" hidden>Light</button>
+        <button id="camStopBtn" class="btn small">Stop</button>
+      </div>
+    </section>
+
+    <!-- INSPECT -->
+    <section id="tab-inspect" class="tab active" aria-labelledby="nav-inspect">
+      <div id="setupHint" class="card hint-card" hidden>
+        <strong>Set up this recipe first</strong>
+        <ol>
+          <li>Open <b>Train</b> and add at least 10 photos of <b>good</b> parts.</li>
+          <li>Add defective examples if you have them (optional, it improves accuracy).</li>
+          <li>Press <b>Train model</b>, then come back here.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="row wrap">
+          <label class="grow">Lot / batch ID
+            <input id="lotInput" type="text" placeholder="e.g. LOT-2026-0415" autocomplete="off">
+          </label>
+          <button id="batchToggleBtn" class="btn">Start batch</button>
+        </div>
+        <div id="batchBar" class="batch-bar" hidden>
+          <div class="counts">
+            <span class="chip pass">Pass <b id="cPass">0</b></span>
+            <span class="chip review">Review <b id="cReview">0</b></span>
+            <span class="chip reject">Reject <b id="cReject">0</b></span>
+          </div>
+          <div id="batchVerdict" class="batch-verdict">Batch open</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="inspectBtn" class="btn primary big">Inspect</button>
+        <label class="toggle"><input id="liveToggle" type="checkbox"> Live</label>
+        <label class="btn ghost file-btn">Photo file<input id="inspectFile" type="file" accept="image/*" hidden></label>
+      </div>
+      <p class="hint center" id="gridHint"></p>
+
+      <div id="resultCard" class="card result" hidden>
+        <div class="result-head">
+          <span id="resultVerdict" class="verdict">—</span>
+          <span id="resultMeta" class="muted"></span>
+        </div>
+        <div id="resultCells" class="cells"></div>
+      </div>
+    </section>
+
+    <!-- TRAIN -->
+    <section id="tab-train" class="tab" aria-labelledby="nav-train">
+      <div class="card">
+        <div class="row wrap capture-row">
+          <button id="addGoodBtn" class="btn pass-btn big">＋ Good</button>
+          <button id="addDefectBtn" class="btn reject-btn big">＋ Defect</button>
+        </div>
+        <div class="row wrap">
+          <label class="grow">Defect type
+            <select id="defectType"></select>
+          </label>
+          <button id="newTypeBtn" class="btn small">New type</button>
+          <label class="toggle"><input id="burstToggle" type="checkbox"> Burst</label>
+        </div>
+        <div class="row wrap">
+          <label class="btn ghost file-btn">Upload good photos<input id="uploadGood" type="file" accept="image/*" multiple hidden></label>
+          <label class="btn ghost file-btn">Upload defect photos<input id="uploadDefect" type="file" accept="image/*" multiple hidden></label>
+        </div>
+        <p class="hint">Capture uses the inspection frame on screen. In tray mode, every cell becomes its own sample. Vary position and lighting slightly so the model learns what normal variation looks like.</p>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <h2>Training set</h2>
+          <span id="sampleCounts" class="muted"></span>
+        </div>
+        <div class="row wrap filter-row">
+          <button class="btn small seg active" data-filter="all">All</button>
+          <button class="btn small seg" data-filter="good">Good</button>
+          <button class="btn small seg" data-filter="defect">Defect</button>
+        </div>
+        <div id="gallery" class="gallery"></div>
+        <p id="galleryEmpty" class="hint center">No samples yet.</p>
+      </div>
+
+      <div class="card">
+        <div class="row wrap">
+          <button id="trainBtn" class="btn primary big grow">Train model</button>
+          <button id="evalBtn" class="btn big">Evaluate</button>
+        </div>
+        <div id="trainProgress" class="progress" hidden><div></div></div>
+        <p id="trainStatus" class="muted"></p>
+        <canvas id="lossChart" class="loss-chart" width="600" height="160" hidden></canvas>
+        <div id="evalResult" class="eval" hidden></div>
+      </div>
+    </section>
+
+    <!-- BATCHES -->
+    <section id="tab-batches" class="tab" aria-labelledby="nav-batches">
+      <div id="batchList"></div>
+      <div id="batchDetail" hidden></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="tab" aria-labelledby="nav-settings">
+      <div class="card">
+        <h2>Recipe</h2>
+        <div class="row wrap">
+          <label class="grow">Name <input id="recipeName" type="text"></label>
+          <button id="deleteRecipeBtn" class="btn danger small">Delete recipe</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Inspection frame</h2>
+        <div class="grid2">
+          <label>Tray rows <input id="setRows" type="number" min="1" max="12" value="1"></label>
+          <label>Tray columns <input id="setCols" type="number" min="1" max="12" value="1"></label>
+          <label class="span2">Frame size <span id="roiVal" class="muted"></span>
+            <input id="setRoi" type="range" min="0.3" max="1" step="0.05" value="0.7"></label>
+        </div>
+        <p class="hint">1 × 1 inspects one part per photo. Set rows and columns to inspect a whole tray of parts in one photo; each cell is judged separately and the batch fails if any cell is defective.</p>
+      </div>
+
+      <div class="card">
+        <h2>Model</h2>
+        <label>Feature network
+          <select id="setBackbone">
+            <option value="fast">MobileNet 0.25 (fastest, older phones)</option>
+            <option value="balanced">MobileNet 0.50 (balanced)</option>
+            <option value="accurate">MobileNet 1.00 (most accurate)</option>
+            <option value="classic">Classic pixel features (offline, no download)</option>
+          </select>
+        </label>
+        <label>Augmented copies per photo <span id="augVal" class="muted"></span>
+          <input id="setAug" type="range" min="0" max="8" step="1" value="4"></label>
+        <label class="toggle"><input id="setMirror" type="checkbox"> Parts may appear mirrored or rotated (turn off if orientation is a defect)</label>
+        <label class="toggle"><input id="setJig" type="checkbox"> Fixed position (jig): also compare pixel-by-pixel to the good reference</label>
+      </div>
+
+      <div class="card">
+        <h2>Decision thresholds</h2>
+        <div class="grid2">
+          <label>Pass if deviation ≤ <span id="passZVal" class="muted"></span>
+            <input id="setPassZ" type="range" min="1" max="8" step="0.5" value="3"></label>
+          <label>Reject if deviation ≥ <span id="rejectZVal" class="muted"></span>
+            <input id="setRejectZ" type="range" min="2" max="15" step="0.5" value="6"></label>
+          <label>Pass if defect probability ≤ <span id="pPassVal" class="muted"></span>
+            <input id="setPPass" type="range" min="0.05" max="0.5" step="0.05" value="0.25"></label>
+          <label>Reject if defect probability ≥ <span id="pRejectVal" class="muted"></span>
+            <input id="setPReject" type="range" min="0.5" max="0.95" step="0.05" value="0.75"></label>
+        </div>
+        <p class="hint">Deviation is measured in robust standard deviations from your good parts. Anything between the pass and reject limits goes to human review instead of being guessed.</p>
+      </div>
+
+      <div class="card">
+        <h2>Operator &amp; live view</h2>
+        <div class="grid2">
+          <label>Operator name <input id="setOperator" type="text" placeholder="optional"></label>
+          <label>Live checks per second
+            <input id="setFps" type="number" min="1" max="10" value="3"></label>
+          <label>Burst photos <input id="setBurst" type="number" min="2" max="30" value="8"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Data</h2>
+        <div class="row wrap">
+          <button id="exportRecipeBtn" class="btn">Export recipe</button>
+          <label class="btn file-btn">Import recipe<input id="importRecipe" type="file" accept=".json,.qerecipe,application/json" hidden></label>
+        </div>
+        <p class="hint">Everything stays on this device (browser storage). Export a recipe to back it up or move it to another phone or PC.</p>
+      </div>
+
+      <div class="card about">
+        <h2>About</h2>
+        <p><strong>QualiEdge AI Inspector</strong> <span id="appVersion"></span></p>
+        <p>Developed by <strong>Ammad Aslam</strong>. © 2026 Ammad Aslam. All rights reserved.</p>
+        <p class="hint">Runs fully in your browser. Photos never leave the device. The feature network is downloaded once from Google's TensorFlow.js model storage and then cached. Results support, not replace, a qualified inspector: validate on your own parts before relying on it.</p>
+        <p class="hint" id="engineInfo"></p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" role="tablist">
+    <button id="nav-inspect" class="active" data-tab="inspect" role="tab">Inspect</button>
+    <button id="nav-train" data-tab="train" role="tab">Train</button>
+    <button id="nav-batches" data-tab="batches" role="tab">Batches</button>
+    <button id="nav-settings" data-tab="settings" role="tab">Settings</button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="sampleDialog">
+    <img id="sampleDialogImg" alt="Training sample">
+    <p id="sampleDialogInfo" class="muted"></p>
+    <div class="row wrap">
+      <button class="btn pass-btn" data-act="good">Mark good</button>
+      <button class="btn reject-btn" data-act="defect">Mark defect</button>
+      <button class="btn danger" data-act="delete">Delete</button>
+      <button class="btn ghost" data-act="close">Close</button>
+    </div>
+  </dialog>
+
+  <script src="vendor/tf.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
